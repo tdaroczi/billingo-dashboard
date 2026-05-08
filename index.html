@@ -8,24 +8,21 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/recharts/2.8.0/Recharts.min.js"></script>
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/tailwindcss/2.2.19/tailwind.min.css" rel="stylesheet"/>
   <style>
     :root {
       --bg: #f8fafc; --card: #ffffff; --border: #e2e8f0;
       --text: #0f172a; --text-muted: #64748b;
     }
-    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); }
-    .animate-spin { animation: spin 1s linear infinite; }
-    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); }
+    button { font-family: inherit; }
     select, input { font-family: inherit; }
   </style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel">
-// ── Proxy alap URL – Netlify redirect-en keresztül ──
 const BASE = "/billingo-api";
-
 
 const { useState, useCallback, useEffect } = React;
 const { BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } = Recharts;
@@ -53,43 +50,25 @@ function KpiCard({ icon, label, value, sub, color }) {
   );
 }
 
-function LoginScreen({ onLogin }) {
-  const [key, setKey] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
-
-  const tryLogin = async () => {
-    if (!key.trim()) return;
-    setLoading(true); setErr("");
-    try {
-      const r = await fetch(`${BASE}/organization`, { headers: { "X-API-KEY": key, Accept: "application/json" } });
-      if (r.status === 401) throw new Error("Érvénytelen API kulcs");
-      if (!r.ok) throw new Error(`Hiba: ${r.status}`);
-      const org = await r.json();
-      onLogin(key, org);
-    } catch(e) { setErr(e.message); }
-    setLoading(false);
-  };
-
+function ErrorScreen({ error, onRetry }) {
   return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"var(--bg)"}}>
-      <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:24,padding:40,width:"100%",maxWidth:400,boxShadow:"0 20px 60px rgba(0,0,0,0.1)"}}>
-        <div style={{textAlign:"center",marginBottom:32}}>
-          <div style={{width:64,height:64,borderRadius:16,background:"linear-gradient(135deg,#6366f1,#8b5cf6)",color:"white",fontSize:28,fontWeight:900,display:"inline-flex",alignItems:"center",justifyContent:"center",marginBottom:12}}>B</div>
-          <h1 style={{margin:"0 0 8px",color:"var(--text)",fontSize:24,fontWeight:800}}>Billingo Dashboard</h1>
-          <p style={{margin:0,color:"var(--text-muted)",fontSize:14}}>Csatlakoztasd Billingo fiókodat az API kulcsoddal</p>
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:24,background:"var(--bg)"}}>
+      <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:24,padding:40,maxWidth:480,boxShadow:"0 20px 60px rgba(0,0,0,0.08)"}}>
+        <div style={{fontSize:48,textAlign:"center",marginBottom:12}}>⚠️</div>
+        <h1 style={{margin:"0 0 8px",fontSize:22,fontWeight:800,textAlign:"center"}}>Nem sikerült csatlakozni</h1>
+        <p style={{color:"var(--text-muted)",fontSize:14,textAlign:"center",marginTop:0}}>{error || "Ismeretlen hiba"}</p>
+        <div style={{background:"#fef3c7",border:"1px solid #fbbf24",borderRadius:12,padding:14,fontSize:13,color:"#78350f",marginTop:16}}>
+          <strong>Ellenőrizd:</strong>
+          <ul style={{margin:"6px 0 0",paddingLeft:20,lineHeight:1.6}}>
+            <li>Netlify → Site settings → <strong>Environment variables</strong></li>
+            <li>Van-e <code style={{background:"#fde68a",padding:"1px 5px",borderRadius:4}}>BILLINGO_API_KEY</code> változó?</li>
+            <li>Helyes az értéke?</li>
+            <li>Új deploy lefutott a változtatás után?</li>
+          </ul>
         </div>
-        <label style={{fontSize:12,fontWeight:700,color:"var(--text-muted)",display:"block",marginBottom:6}}>API Kulcs (X-API-KEY)</label>
-        <input type="password" value={key} onChange={e=>setKey(e.target.value)} onKeyDown={e=>e.key==="Enter"&&tryLogin()} placeholder="Illeszd be a Billingo API kulcsot..."
-          style={{width:"100%",padding:"12px 16px",borderRadius:12,border:"1px solid var(--border)",fontSize:14,color:"var(--text)",background:"var(--bg)",boxSizing:"border-box",outline:"none",marginBottom:12}} />
-        {err && <div style={{background:"#fee2e2",color:"#991b1b",padding:"8px 12px",borderRadius:8,fontSize:13,marginBottom:12}}>{err}</div>}
-        <button onClick={tryLogin} disabled={loading}
-          style={{width:"100%",padding:"12px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#6366f1,#8b5cf6)",color:"white",fontWeight:700,fontSize:15,cursor:"pointer"}}>
-          {loading ? "Kapcsolódás..." : "Belépés"}
+        <button onClick={onRetry} style={{width:"100%",padding:"12px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#6366f1,#8b5cf6)",color:"white",fontWeight:700,fontSize:14,cursor:"pointer",marginTop:16}}>
+          🔄 Újrapróbálkozás
         </button>
-        <p style={{fontSize:12,color:"var(--text-muted)",textAlign:"center",marginTop:20}}>
-          API kulcsot a <strong>Billingo → Beállítások → API kulcsok</strong> menüpontban hozhatsz létre.
-        </p>
       </div>
     </div>
   );
@@ -151,47 +130,61 @@ function Modal({ doc, onClose }) {
 }
 
 function App() {
-  const [apiKey, setApiKey] = useState(() => sessionStorage.getItem("billingo_key") || "");
   const [org, setOrg] = useState(null);
   const [docs, setDocs] = useState([]);
   const [partners, setPartners] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
   const [tab, setTab] = useState("overview");
   const [selectedDoc, setSelectedDoc] = useState(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
 
-  const fetchAll = useCallback(async (key) => {
+  const fetchAll = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
-      const headers = { "X-API-KEY": key, Accept: "application/json" };
+      const headers = { Accept: "application/json" };
+      const safeFetch = url => fetch(url, {headers}).then(async r => {
+        if (!r.ok) {
+          const txt = await r.text();
+          let parsed;
+          try { parsed = JSON.parse(txt); } catch { parsed = { error: txt }; }
+          throw new Error(parsed.error || `HTTP ${r.status}`);
+        }
+        return r.json();
+      });
+
       const [orgR, d1, d2, d3, p1, p2] = await Promise.all([
-        fetch(`${BASE}/organization`, {headers}).then(r=>r.json()),
-        fetch(`${BASE}/documents?per_page=100&page=1`, {headers}).then(r=>r.json()),
-        fetch(`${BASE}/documents?per_page=100&page=2`, {headers}).then(r=>r.json()).catch(()=>({data:[]})),
-        fetch(`${BASE}/documents?per_page=100&page=3`, {headers}).then(r=>r.json()).catch(()=>({data:[]})),
-        fetch(`${BASE}/partners?per_page=100&page=1`, {headers}).then(r=>r.json()),
-        fetch(`${BASE}/partners?per_page=100&page=2`, {headers}).then(r=>r.json()).catch(()=>({data:[]})),
+        safeFetch(`${BASE}/organization`),
+        safeFetch(`${BASE}/documents?per_page=100&page=1`),
+        safeFetch(`${BASE}/documents?per_page=100&page=2`).catch(()=>({data:[]})),
+        safeFetch(`${BASE}/documents?per_page=100&page=3`).catch(()=>({data:[]})),
+        safeFetch(`${BASE}/partners?per_page=100&page=1`),
+        safeFetch(`${BASE}/partners?per_page=100&page=2`).catch(()=>({data:[]})),
       ]);
       setOrg(orgR);
       setDocs([...(d1.data||[]), ...(d2.data||[]), ...(d3.data||[])]);
       setPartners([...(p1.data||[]), ...(p2.data||[])]);
-    } catch(e) { console.error(e); }
+    } catch(e) {
+      console.error(e);
+      setError(e.message);
+    }
     setLoading(false);
   }, []);
 
-  const handleLogin = (key, orgData) => {
-    sessionStorage.setItem("billingo_key", key);
-    setApiKey(key);
-    setOrg(orgData);
-    fetchAll(key);
-  };
+  useEffect(() => { fetchAll(); }, [fetchAll]);
 
-  useEffect(() => {
-    if (apiKey) fetchAll(apiKey);
-  }, []);
+  if (error) return <ErrorScreen error={error} onRetry={fetchAll}/>;
 
-  if (!apiKey) return <LoginScreen onLogin={handleLogin} />;
+  if (loading && !org) {
+    return (
+      <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16}}>
+        <div style={{width:48,height:48,borderRadius:14,background:"linear-gradient(135deg,#6366f1,#8b5cf6)",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:900,fontSize:24}}>B</div>
+        <div style={{color:"var(--text-muted)",fontSize:14}}>Billingo adatok betöltése...</div>
+      </div>
+    );
+  }
 
   const paid = docs.filter(d=>d.payment_status==="paid");
   const unpaid = docs.filter(d=>d.payment_status==="unpaid");
@@ -227,7 +220,6 @@ function App() {
 
   return (
     <div style={{minHeight:"100vh",display:"flex"}}>
-      {/* Sidebar */}
       <div style={{width:220,flexShrink:0,background:"var(--card)",borderRight:"1px solid var(--border)",display:"flex",flexDirection:"column",padding:"24px 12px"}}>
         <div style={{display:"flex",alignItems:"center",gap:10,padding:"0 8px",marginBottom:32}}>
           <div style={{width:36,height:36,borderRadius:10,background:"linear-gradient(135deg,#6366f1,#8b5cf6)",color:"white",fontWeight:900,fontSize:18,display:"flex",alignItems:"center",justifyContent:"center"}}>B</div>
@@ -236,17 +228,13 @@ function App() {
         {[["overview","📊","Áttekintés"],["invoices","📄","Számlák"],["partners","👥","Partnerek"]].map(([id,ic,lb])=>(
           <button key={id} onClick={()=>setTab(id)} style={navStyle(id)}>{ic} {lb}</button>
         ))}
-        <div style={{marginTop:"auto",display:"flex",flexDirection:"column",gap:6}}>
-          <button onClick={()=>fetchAll(apiKey)} disabled={loading} style={{...navStyle(""),color:"#6366f1",background:"transparent"}}>
+        <div style={{marginTop:"auto"}}>
+          <button onClick={fetchAll} disabled={loading} style={{...navStyle(""),color:"#6366f1",background:"transparent"}}>
             🔄 {loading?"Töltés...":"Frissítés"}
-          </button>
-          <button onClick={()=>{sessionStorage.removeItem("billingo_key");setApiKey("");setOrg(null);setDocs([]);setPartners([]);}} style={{...navStyle(""),color:"#ef4444"}}>
-            🚪 Kilépés
           </button>
         </div>
       </div>
 
-      {/* Main */}
       <div style={{flex:1,overflow:"auto"}}>
         <div style={{maxWidth:900,margin:"0 auto",padding:"32px 24px"}}>
           <h1 style={{fontSize:22,fontWeight:800,color:"var(--text)",marginBottom:4}}>
@@ -254,9 +242,7 @@ function App() {
           </h1>
           <p style={{color:"var(--text-muted)",fontSize:13,marginBottom:28}}>{docs.length} számla · {partners.length} partner</p>
 
-          {loading && docs.length===0 ? (
-            <div style={{textAlign:"center",padding:"80px 0",color:"var(--text-muted)"}}>⏳ Betöltés...</div>
-          ) : tab==="overview" ? (
+          {tab==="overview" && (
             <div style={{display:"flex",flexDirection:"column",gap:24}}>
               {org && (
                 <div style={{background:"linear-gradient(135deg,#6366f1,#8b5cf6)",borderRadius:20,padding:24,color:"white",display:"flex",alignItems:"center",gap:16}}>
@@ -312,7 +298,9 @@ function App() {
                 </div>
               )}
             </div>
-          ) : tab==="invoices" ? (
+          )}
+
+          {tab==="invoices" && (
             <div style={{display:"flex",flexDirection:"column",gap:16}}>
               <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
                 <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="🔍  Partner vagy számlaszám..." style={{...selectStyle,flex:1,minWidth:200}}/>
@@ -342,7 +330,9 @@ function App() {
                 </div>
               </div>
             </div>
-          ) : (
+          )}
+
+          {tab==="partners" && (
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(260px,1fr))",gap:16}}>
               {partners.map(p=>(
                 <div key={p.id} style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:16,padding:16,display:"flex",gap:12}}>
