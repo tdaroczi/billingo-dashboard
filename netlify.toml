@@ -1,0 +1,5 @@
+[[redirects]]
+  from = "/billingo-api/*"
+  to = "https://api.billingo.hu/v3/:splat"
+  status = 200
+  force = true
