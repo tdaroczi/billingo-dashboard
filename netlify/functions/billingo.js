@@ -1,6 +1,7 @@
 // Szerveroldali proxy a Billingo API-hoz.
 // A BILLINGO_API_KEY env változót injektálja minden kérésbe,
 // így a böngésző soha nem látja a kulcsot.
+// Támogatja a JSON és binary (PDF) válaszokat is.
 
 exports.handler = async (event) => {
   const apiKey = process.env.BILLINGO_API_KEY;
@@ -16,9 +17,7 @@ exports.handler = async (event) => {
     };
   }
 
-  // Path normalizálás:
-  // /.netlify/functions/billingo/documents → /documents
-  // /billingo-api/documents → /documents
+  // Path normalizálás
   let path = (event.path || "")
     .replace(/^\/\.netlify\/functions\/billingo/, "")
     .replace(/^\/billingo-api/, "");
@@ -26,7 +25,7 @@ exports.handler = async (event) => {
   if (!path || path === "/") path = "";
   if (path && !path.startsWith("/")) path = "/" + path;
 
-  // Query string építés – Netlify több formátumban adja át
+  // Query string építés
   let queryString = "";
   if (event.rawQuery && event.rawQuery.length > 0) {
     queryString = "?" + event.rawQuery;
@@ -47,27 +46,39 @@ exports.handler = async (event) => {
       method: event.httpMethod,
       headers: {
         "X-API-KEY": apiKey,
-        "Accept": "application/json",
-        "Content-Type": "application/json"
+        "Accept": "*/*"
       },
       body: ["GET", "HEAD"].includes(event.httpMethod) ? undefined : event.body
     });
 
-    const data = await response.text();
+    const contentType = response.headers.get("content-type") || "application/json";
+    const isText = contentType.includes("json") || contentType.includes("text") || contentType.includes("xml");
 
-    return {
-      statusCode: response.status,
-      headers: { "Content-Type": "application/json" },
-      body: data
-    };
+    if (isText) {
+      const data = await response.text();
+      return {
+        statusCode: response.status,
+        headers: { "Content-Type": contentType },
+        body: data
+      };
+    } else {
+      // Binary (PDF, képek stb.) – base64-be kódolva, a böngésző visszafordítja blob-ra
+      const buffer = await response.arrayBuffer();
+      const base64 = Buffer.from(buffer).toString("base64");
+      return {
+        statusCode: response.status,
+        headers: { "Content-Type": contentType },
+        body: base64,
+        isBase64Encoded: true
+      };
+    }
   } catch (error) {
     return {
       statusCode: 502,
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         error: "Failed to reach Billingo API",
-        details: error.message,
-        url: billingoUrl
+        details: error.message
       })
     };
   }
