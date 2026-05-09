@@ -27,60 +27,30 @@ const { useState, useCallback, useEffect } = React;
 
 // ── Magyar fordítások ──
 const STATUS_LABEL = {
-  paid: "Fizetve",
-  outstanding: "Fizetetlen",
-  unpaid: "Fizetetlen",
-  expired: "Lejárt",
-  late: "Késve fizetve",
-  cancelled: "Sztornózva",
-  draft: "Piszkozat",
+  paid: "Fizetve", outstanding: "Fizetetlen", unpaid: "Fizetetlen",
+  expired: "Lejárt", late: "Késve fizetve", cancelled: "Sztornózva", draft: "Piszkozat",
 };
 const STATUS_COLOR = {
-  paid: "#d1fae5 #065f46",
-  outstanding: "#fef3c7 #92400e",
-  unpaid: "#fef3c7 #92400e",
-  expired: "#fee2e2 #991b1b",
-  late: "#fed7aa #9a3412",
-  cancelled: "#f1f5f9 #475569",
-  draft: "#dbeafe #1e40af",
+  paid: "#d1fae5 #065f46", outstanding: "#fef3c7 #92400e", unpaid: "#fef3c7 #92400e",
+  expired: "#fee2e2 #991b1b", late: "#fed7aa #9a3412",
+  cancelled: "#f1f5f9 #475569", draft: "#dbeafe #1e40af",
 };
 const TYPE_LABEL = {
-  invoice: "Számla",
-  proforma: "Díjbekérő",
-  draft: "Piszkozat",
-  advance: "Előlegszámla",
-  receipt: "Nyugta",
-  reverse_invoice: "Sztornó",
-  cancel_invoice: "Sztornó",
-  modification: "Módosító",
-  modify_invoice: "Módosító",
-  corrective_invoice: "Helyesbítő",
-  delivery: "Szállítólevél",
+  invoice: "Számla", proforma: "Díjbekérő", draft: "Piszkozat",
+  advance: "Előlegszámla", receipt: "Nyugta",
+  reverse_invoice: "Sztornó", cancel_invoice: "Sztornó",
+  modification: "Módosító", modify_invoice: "Módosító",
+  corrective_invoice: "Helyesbítő", delivery: "Szállítólevél",
 };
 const PMETHOD_LABEL = {
-  cash: "Készpénz",
-  bankcard: "Bankkártya",
-  online_bankcard: "Online kártya",
-  wire_transfer: "Átutalás",
-  transfer: "Átutalás",
-  paypal: "PayPal",
-  szep_card: "SZÉP kártya",
-  szep_card_oktatas: "SZÉP (OKJ)",
-  szep_card_szabadido: "SZÉP (Szabadidő)",
-  szep_card_vendeglatas: "SZÉP (Vendéglátás)",
-  cash_on_delivery: "Utánvét",
-  voucher: "Utalvány",
-  barion: "Barion",
-  barter: "Barter",
-  coupon: "Kupon",
-  ep_card: "EP kártya",
-  factoring: "Faktoring",
-  prepayment: "Előleg",
-  set_off: "Beszámítás",
-  other: "Egyéb",
-  exchange_voucher: "Csere",
-  payu: "PayU",
-  pick_pack_pont: "PickPackPont",
+  cash: "Készpénz", bankcard: "Bankkártya", online_bankcard: "Online kártya",
+  wire_transfer: "Átutalás", transfer: "Átutalás", paypal: "PayPal",
+  szep_card: "SZÉP kártya", szep_card_oktatas: "SZÉP (OKJ)",
+  szep_card_szabadido: "SZÉP (Szabadidő)", szep_card_vendeglatas: "SZÉP (Vendéglátás)",
+  cash_on_delivery: "Utánvét", voucher: "Utalvány", barion: "Barion", barter: "Barter",
+  coupon: "Kupon", ep_card: "EP kártya", factoring: "Faktoring",
+  prepayment: "Előleg", set_off: "Beszámítás", other: "Egyéb",
+  exchange_voucher: "Csere", payu: "PayU", pick_pack_pont: "PickPackPont",
 };
 
 const tStatus = s => STATUS_LABEL[s] || s || "–";
@@ -91,33 +61,45 @@ const fmt = (n, cur) => {
   if (cur == null) cur = "HUF";
   return n == null ? "–" : new Intl.NumberFormat("hu-HU", { style:"currency", currency:cur, maximumFractionDigits:0 }).format(n);
 };
-const fmtDate = d => d ? new Date(d).toLocaleDateString("hu-HU") : "–";
-const daysBetween = (a, b) => a && b ? Math.round((new Date(b) - new Date(a)) / 86400000) : null;
-
-// Robosztus összegolvasás (Billingo eltérő mezőneveket használhat)
-const getGross = d => {
-  const s = d.summary || {};
-  return s.gross_amount || s.gross_price || s.gross || s.total_gross || 0;
+const fmtCompact = (n) => {
+  if (n == null) return "–";
+  if (Math.abs(n) >= 1000000) return (n/1000000).toFixed(1).replace(".",",") + " M Ft";
+  if (Math.abs(n) >= 1000) return Math.round(n/1000) + " e Ft";
+  return Math.round(n) + " Ft";
 };
+const fmtDate = d => d ? new Date(d).toLocaleDateString("hu-HU") : "–";
+
+// ── Robosztus mezőolvasók (AAM/KATA fix) ──
 const getNet = d => {
   const s = d.summary || {};
   return s.net_amount || s.net_price || s.net || s.total_net || 0;
 };
+const getVat = d => {
+  const s = d.summary || {};
+  return s.vat_amount || s.vat_price || s.vat || s.total_vat || 0;
+};
+const getGross = d => {
+  const s = d.summary || {};
+  const gross = s.gross_amount || s.gross_price || s.gross || s.total_gross || s.total || 0;
+  if (gross > 0) return gross;
+  // AAM/KATA fallback: bruttó = nettó + ÁFA
+  return getNet(d) + getVat(d);
+};
+const getPaidDate = d => d.paid_date || d.paid_at || d.payment_date || null;
 
-// Fizetetlen-szerű státuszok (lejárt is)
 const isOutstanding = d => d.payment_status === "outstanding" || d.payment_status === "unpaid";
 const isExpired = d => d.payment_status === "expired" || d.payment_status === "late";
 const isPaid = d => d.payment_status === "paid";
 
 // ── SVG chart komponensek ──
 function BarChartSimple({ data, height }) {
-  height = height || 200;
+  height = height || 220;
   if (!data || data.length === 0) {
     return <div style={{height,display:"flex",alignItems:"center",justifyContent:"center",color:"var(--text-muted)",fontSize:13}}>Nincs elég adat</div>;
   }
   const max = Math.max.apply(null, data.map(d => d.value)) || 1;
-  const padTop = 15, padBot = 30, padLeft = 50, padRight = 10;
-  const W = 500, H = height;
+  const padTop = 15, padBot = 30, padLeft = 60, padRight = 10;
+  const W = 520, H = height;
   const innerW = W - padLeft - padRight;
   const innerH = H - padTop - padBot;
   const step = innerW / data.length;
@@ -221,6 +203,33 @@ function StatusBadge({ status }) {
   return <span style={{background:parts[0],color:parts[1],padding:"2px 8px",borderRadius:999,fontSize:11,fontWeight:700}}>{tStatus(status)}</span>;
 }
 
+// Hero KPI – kiemelt nagy szám változási jelzéssel
+function HeroKpi({ label, value, sub, change, color }) {
+  let changeBox = null;
+  if (change != null) {
+    const positive = change >= 0;
+    changeBox = (
+      <span style={{
+        background: positive ? "#dcfce7" : "#fee2e2",
+        color: positive ? "#15803d" : "#991b1b",
+        padding:"3px 8px", borderRadius:8, fontSize:12, fontWeight:700, marginLeft:8
+      }}>
+        {positive ? "▲" : "▼"} {Math.abs(change)}%
+      </span>
+    );
+  }
+  return (
+    <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:16,padding:22,display:"flex",flexDirection:"column",gap:6}}>
+      <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:"var(--text-muted)"}}>{label}</div>
+      <div style={{display:"flex",alignItems:"baseline",flexWrap:"wrap"}}>
+        <div style={{fontSize:26,fontWeight:800,color:color || "var(--text)"}}>{value}</div>
+        {changeBox}
+      </div>
+      {sub ? <div style={{fontSize:12,color:"var(--text-muted)"}}>{sub}</div> : null}
+    </div>
+  );
+}
+
 function KpiCard({ icon, label, value, sub, color }) {
   return (
     <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:16,padding:20,display:"flex",flexDirection:"column",gap:8}}>
@@ -282,13 +291,16 @@ function Modal({ doc, onClose }) {
       const blob = await r.blob();
       const url = URL.createObjectURL(blob);
       window.open(url, "_blank");
-      // Tisztítás kicsit később
       setTimeout(() => URL.revokeObjectURL(url), 60000);
     } catch (e) {
       setDownloadError(e.message);
     }
     setDownloading(false);
   };
+
+  const net = getNet(doc);
+  const vat = getVat(doc);
+  const gross = getGross(doc);
 
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
@@ -307,7 +319,7 @@ function Modal({ doc, onClose }) {
               ["Státusz", tStatus(doc.payment_status)],
               ["Kiállítás", fmtDate(doc.invoice_date)],
               ["Lejárat", fmtDate(doc.due_date)],
-              ["Fizetve", fmtDate(doc.paid_date)],
+              ["Fizetve", fmtDate(getPaidDate(doc))],
               ["Fizetési mód", tPMethod(doc.payment_method)]
             ].map(([l,v])=>(
               <div key={l} style={{background:"var(--bg)",borderRadius:10,padding:"10px 12px"}}>
@@ -320,15 +332,15 @@ function Modal({ doc, onClose }) {
             <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:"var(--text-muted)",marginBottom:12}}>Összesítő</div>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:8,fontSize:14}}>
               <span style={{color:"var(--text-muted)"}}>Nettó</span>
-              <span>{fmt(getNet(doc),doc.currency)}</span>
+              <span>{fmt(net,doc.currency)}</span>
             </div>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:12,fontSize:14}}>
               <span style={{color:"var(--text-muted)"}}>ÁFA</span>
-              <span>{fmt(getGross(doc) - getNet(doc),doc.currency)}</span>
+              <span>{fmt(vat,doc.currency)}</span>
             </div>
             <div style={{display:"flex",justifyContent:"space-between",fontSize:16,fontWeight:800,borderTop:"1px solid var(--border)",paddingTop:12}}>
               <span>Bruttó</span>
-              <span style={{color:"#6366f1"}}>{fmt(getGross(doc),doc.currency)}</span>
+              <span style={{color:"#6366f1"}}>{fmt(gross,doc.currency)}</span>
             </div>
           </div>
           {downloadError && (
@@ -340,6 +352,19 @@ function Modal({ doc, onClose }) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// Mini lista row (lejárt / fizetetlen widget-hez)
+function MiniInvoiceRow({ d, onClick, color }) {
+  return (
+    <div onClick={onClick} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid var(--border)",cursor:"pointer"}}>
+      <div style={{minWidth:0,flex:1}}>
+        <div style={{fontWeight:600,fontSize:13,color:"var(--text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{(d.partner && d.partner.name) || "–"}</div>
+        <div style={{fontSize:11,color:"var(--text-muted)"}}>{d.invoice_number} · {fmtDate(d.due_date)}</div>
+      </div>
+      <div style={{fontWeight:800,color:color || "#ef4444",fontSize:14,marginLeft:12}}>{fmt(getGross(d), d.currency)}</div>
     </div>
   );
 }
@@ -380,19 +405,18 @@ function App() {
         return r.json();
       };
 
-      // Több oldalt párhuzamosan
       const docPromises = [];
-      for (let p = 1; p <= 5; p++) {
+      for (let p = 1; p <= 8; p++) {
         docPromises.push(safeFetch(BASE + "/documents?per_page=100&page=" + p).catch(()=>({data:[]})));
       }
       const partnerPromises = [];
-      for (let p = 1; p <= 3; p++) {
+      for (let p = 1; p <= 5; p++) {
         partnerPromises.push(safeFetch(BASE + "/partners?per_page=100&page=" + p).catch(()=>({data:[]})));
       }
 
       const [orgR, ...rest] = await Promise.all([safeFetch(BASE + "/organization"), ...docPromises, ...partnerPromises]);
-      const docResults = rest.slice(0, 5);
-      const partnerResults = rest.slice(5);
+      const docResults = rest.slice(0, 8);
+      const partnerResults = rest.slice(8);
 
       setOrg(orgR);
       const allDocs = [];
@@ -431,39 +455,83 @@ function App() {
   const totalExpired = expired.reduce((s,d)=>s+getGross(d),0);
   const avgInvoice = paid.length > 0 ? totalRevenue / paid.length : 0;
 
-  // Idei vs tavalyi
+  // Időablakok
   const now = new Date();
   const thisYear = now.getFullYear();
   const lastYear = thisYear - 1;
-  const ytdPaid = paid.filter(d => {
-    const dt = d.paid_date || d.invoice_date;
-    return dt && new Date(dt).getFullYear() === thisYear;
-  });
-  const lastYearPaid = paid.filter(d => {
-    const dt = d.paid_date || d.invoice_date;
-    return dt && new Date(dt).getFullYear() === lastYear;
-  });
+  const thisMonth = now.getMonth(); // 0-11
+  const lastMonthDate = new Date(thisYear, thisMonth - 1, 1);
+  const lastMonth = lastMonthDate.getMonth();
+  const lastMonthYear = lastMonthDate.getFullYear();
+
+  const inDateRange = (d, year, month) => {
+    const dt = getPaidDate(d) || d.invoice_date;
+    if (!dt) return false;
+    const o = new Date(dt);
+    if (month != null) return o.getFullYear() === year && o.getMonth() === month;
+    return o.getFullYear() === year;
+  };
+
+  // Idei / tavalyi / ehavi / múlt havi (paid)
+  const ytdPaid = paid.filter(d => inDateRange(d, thisYear));
+  const lastYearPaid = paid.filter(d => inDateRange(d, lastYear));
+  const thisMonthPaid = paid.filter(d => inDateRange(d, thisYear, thisMonth));
+  const lastMonthPaid = paid.filter(d => inDateRange(d, lastMonthYear, lastMonth));
+
   const ytdRevenue = ytdPaid.reduce((s,d)=>s+getGross(d),0);
   const lastYearRevenue = lastYearPaid.reduce((s,d)=>s+getGross(d),0);
+  const thisMonthRevenue = thisMonthPaid.reduce((s,d)=>s+getGross(d),0);
+  const lastMonthRevenue = lastMonthPaid.reduce((s,d)=>s+getGross(d),0);
 
-  // Átlagos fizetési idő (paid_date - invoice_date)
-  const paymentDays = paid
-    .map(d => daysBetween(d.invoice_date, d.paid_date))
-    .filter(n => n != null && n >= 0 && n < 365);
-  const avgPayDays = paymentDays.length > 0
-    ? Math.round(paymentDays.reduce((s,n)=>s+n,0) / paymentDays.length)
+  // Tavaly ekkor (azonos napig)
+  const dayOfYear = Math.floor((now - new Date(thisYear,0,0)) / 86400000);
+  const lastYearSamePeriod = lastYearPaid.filter(d => {
+    const dt = getPaidDate(d) || d.invoice_date;
+    const ly = Math.floor((new Date(dt) - new Date(lastYear,0,0)) / 86400000);
+    return ly <= dayOfYear;
+  });
+  const lastYearSamePeriodRevenue = lastYearSamePeriod.reduce((s,d)=>s+getGross(d),0);
+
+  // Növekedési %
+  const yoyChange = lastYearSamePeriodRevenue > 0
+    ? Math.round((ytdRevenue - lastYearSamePeriodRevenue) / lastYearSamePeriodRevenue * 100)
     : null;
+  const momChange = lastMonthRevenue > 0
+    ? Math.round((thisMonthRevenue - lastMonthRevenue) / lastMonthRevenue * 100)
+    : null;
+
+  // Fizetési ráta
+  const totalRelevant = paid.length + outstanding.length + expired.length;
+  const paymentRate = totalRelevant > 0 ? Math.round(paid.length / totalRelevant * 100) : 100;
+
+  // Új ügyfelek ezen a hónapon (akinek először állítottál ki idén számlát ebben a hónapban)
+  const partnerFirstInvoice = {};
+  docs.forEach(d => {
+    const name = (d.partner && d.partner.name) || null;
+    if (!name) return;
+    const dt = d.invoice_date;
+    if (!dt) return;
+    if (!partnerFirstInvoice[name] || new Date(dt) < new Date(partnerFirstInvoice[name])) {
+      partnerFirstInvoice[name] = dt;
+    }
+  });
+  const newPartnersThisMonth = Object.values(partnerFirstInvoice).filter(dt => {
+    const o = new Date(dt);
+    return o.getFullYear() === thisYear && o.getMonth() === thisMonth;
+  }).length;
 
   // Havi bevétel (utolsó 12 hónap, fizetve)
   const monthly = {};
   paid.forEach(d => {
-    const k = (d.paid_date || d.invoice_date || "").substring(0,7);
-    if (k) monthly[k] = (monthly[k]||0) + getGross(d);
+    const dt = getPaidDate(d) || d.invoice_date;
+    if (!dt) return;
+    const k = dt.substring(0,7);
+    monthly[k] = (monthly[k]||0) + getGross(d);
   });
-  const monthlyData = Object.entries(monthly).sort().slice(-12).map(([k,v])=>({
-    label: k.substring(2).replace("-","."),
-    value: Math.round(v)
-  }));
+  const monthlyData = Object.entries(monthly).sort().slice(-12).map(([k,v])=>{
+    const parts = k.split("-");
+    return { label: parts[0].substring(2) + "." + parts[1], value: Math.round(v) };
+  });
 
   // Számla típus megoszlás
   const typeCounts = {};
@@ -517,20 +585,8 @@ function App() {
   const tabTitles = { overview:"Áttekintés", invoices:"Számlák", partners:"Partnerek" };
   const cardStyle = {background:"var(--card)",border:"1px solid var(--border)",borderRadius:16,padding:20};
 
-  // Bevétel változás % (idei vs tavalyi, ugyanazon naptári napig)
-  const dayOfYear = Math.floor((now - new Date(thisYear,0,0)) / 86400000);
-  const lastYearSamePeriod = paid.filter(d => {
-    const dt = d.paid_date || d.invoice_date;
-    if (!dt) return false;
-    const dtO = new Date(dt);
-    if (dtO.getFullYear() !== lastYear) return false;
-    const lyDayOfYear = Math.floor((dtO - new Date(lastYear,0,0)) / 86400000);
-    return lyDayOfYear <= dayOfYear;
-  });
-  const lastYearSamePeriodRevenue = lastYearSamePeriod.reduce((s,d)=>s+getGross(d),0);
-  const yoyChange = lastYearSamePeriodRevenue > 0
-    ? Math.round((ytdRevenue - lastYearSamePeriodRevenue) / lastYearSamePeriodRevenue * 100)
-    : null;
+  // Hónap neve
+  const MONTH_NAMES = ["jan","feb","már","ápr","máj","jún","júl","aug","szept","okt","nov","dec"];
 
   return (
     <div style={{minHeight:"100vh",display:"flex"}}>
@@ -550,20 +606,18 @@ function App() {
       </div>
 
       <div style={{flex:1,overflow:"auto"}}>
-        <div style={{maxWidth:1100,margin:"0 auto",padding:"32px 24px"}}>
+        <div style={{maxWidth:1200,margin:"0 auto",padding:"32px 24px"}}>
           <h1 style={{fontSize:22,fontWeight:800,color:"var(--text)",marginBottom:4}}>{tabTitles[tab]}</h1>
-          <p style={{color:"var(--text-muted)",fontSize:13,marginBottom:28}}>{docs.length} számla · {partners.length} partner</p>
+          <p style={{color:"var(--text-muted)",fontSize:13,marginBottom:24}}>{docs.length} számla · {partners.length} partner</p>
 
           {tab==="overview" && (
             <div style={{display:"flex",flexDirection:"column",gap:20}}>
               {org && (
-                <div style={{background:"linear-gradient(135deg,#6366f1,#8b5cf6)",borderRadius:20,padding:24,color:"white",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
-                  <div style={{width:52,height:52,borderRadius:14,background:"rgba(255,255,255,0.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,fontWeight:900}}>
-                    💼
-                  </div>
+                <div style={{background:"linear-gradient(135deg,#6366f1,#8b5cf6)",borderRadius:20,padding:20,color:"white",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
+                  <div style={{width:48,height:48,borderRadius:12,background:"rgba(255,255,255,0.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:22}}>💼</div>
                   <div style={{flex:1,minWidth:200}}>
-                    <div style={{fontWeight:800,fontSize:19}}>Adószám: {org.tax_code || "–"}</div>
-                    <div style={{opacity:.85,fontSize:13,marginTop:2}}>
+                    <div style={{fontWeight:800,fontSize:18}}>Adószám: {org.tax_code || "–"}</div>
+                    <div style={{opacity:.85,fontSize:12,marginTop:2}}>
                       {org.subscription && org.subscription.features && org.subscription.features.indexOf("billingo_business") >= 0 ? "Billingo Business" : "Billingo"}
                       {org.has_nav_connection ? " · NAV ✓" : ""}
                       {org.subscription && org.subscription.expiration_date ? (" · Lejár: " + fmtDate(org.subscription.expiration_date)) : ""}
@@ -572,27 +626,43 @@ function App() {
                 </div>
               )}
 
-              {/* Fő KPI-k */}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14}}>
-                <KpiCard icon="💰" label="Bevétel idén" value={fmt(ytdRevenue)} sub={ytdPaid.length + " számla " + thisYear + "-ben"} color="#10b981"/>
-                <KpiCard icon="📈" label="Idei vs tavalyi" value={yoyChange != null ? (yoyChange >= 0 ? "+" : "") + yoyChange + "%" : "–"} sub={"Tavaly ekkor: " + fmt(lastYearSamePeriodRevenue)} color={yoyChange == null ? "#94a3b8" : yoyChange >= 0 ? "#10b981" : "#ef4444"}/>
-                <KpiCard icon="⏳" label="Kintlévőség" value={fmt(totalOutstanding)} sub={outstanding.length + " fizetetlen"} color="#f59e0b"/>
-                <KpiCard icon="🔴" label="Lejárt" value={fmt(totalExpired)} sub={expired.length + " db"} color="#ef4444"/>
+              {/* Hero KPI sor */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(260px,1fr))",gap:16}}>
+                <HeroKpi
+                  label={MONTH_NAMES[thisMonth] + ". hó bevétel"}
+                  value={fmt(thisMonthRevenue)}
+                  sub={thisMonthPaid.length + " számla · múlt hó: " + fmtCompact(lastMonthRevenue)}
+                  change={momChange}
+                  color="#6366f1"
+                />
+                <HeroKpi
+                  label={thisYear + " bevétel"}
+                  value={fmt(ytdRevenue)}
+                  sub={ytdPaid.length + " számla · tavaly ekkor: " + fmtCompact(lastYearSamePeriodRevenue)}
+                  change={yoyChange}
+                  color="#10b981"
+                />
+                <HeroKpi
+                  label="Kintlévőség"
+                  value={fmt(totalOutstanding + totalExpired)}
+                  sub={(outstanding.length + expired.length) + " számla várja a fizetést"}
+                  color={(outstanding.length + expired.length) > 0 ? "#f59e0b" : "#10b981"}
+                />
               </div>
 
-              {/* Másodlagos KPI-k */}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14}}>
-                <KpiCard icon="🧾" label="Összes számla" value={docs.length} sub={paid.length + " kifizetett"} color="#6366f1"/>
-                <KpiCard icon="📊" label="Átlag számla" value={fmt(avgInvoice)} sub="kifizetettre" color="#8b5cf6"/>
-                <KpiCard icon="⏱️" label="Átlag fizetési idő" value={avgPayDays != null ? avgPayDays + " nap" : "–"} sub={paymentDays.length + " számla alapján"} color="#22d3ee"/>
-                <KpiCard icon="👥" label="Aktív partnerek" value={Object.keys(partnerRevenue).length} sub={"Összesen: " + partners.length} color="#f59e0b"/>
+              {/* Másodlagos KPI sor */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:14}}>
+                <KpiCard icon="✅" label="Fizetési ráta" value={paymentRate + "%"} sub={paid.length + " / " + totalRelevant + " számla"} color="#10b981"/>
+                <KpiCard icon="🔴" label="Lejárt" value={fmt(totalExpired)} sub={expired.length + " db"} color="#ef4444"/>
+                <KpiCard icon="🆕" label="Új ügyfelek (e hó)" value={newPartnersThisMonth} sub={"Aktív: " + Object.keys(partnerRevenue).length} color="#22d3ee"/>
+                <KpiCard icon="📊" label="Átlag számla" value={fmtCompact(avgInvoice)} sub={paid.length + " kifizetett"} color="#8b5cf6"/>
               </div>
 
               {/* Charts */}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(380px,1fr))",gap:20}}>
+              <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:20}}>
                 <div style={cardStyle}>
-                  <div style={{fontWeight:700,marginBottom:16,color:"var(--text)"}}>Havi bevétel (utolsó 12 hónap)</div>
-                  <BarChartSimple data={monthlyData} height={220}/>
+                  <div style={{fontWeight:700,marginBottom:16,color:"var(--text)"}}>📈 Havi bevétel (utolsó 12 hónap)</div>
+                  <BarChartSimple data={monthlyData} height={230}/>
                 </div>
                 <div style={cardStyle}>
                   <div style={{fontWeight:700,marginBottom:16,color:"var(--text)"}}>Számla státusz</div>
@@ -628,7 +698,7 @@ function App() {
                 </div>
 
                 {/* Számla típusok */}
-                {typeData.length > 0 && (
+                {typeData.length > 1 && (
                   <div style={cardStyle}>
                     <div style={{fontWeight:700,marginBottom:16,color:"var(--text)"}}>📋 Számla típusok</div>
                     <PieChartSimple data={typeData} size={180}/>
@@ -636,19 +706,31 @@ function App() {
                 )}
               </div>
 
-              {/* Lejárt számlák */}
-              {expired.length > 0 && (
-                <div style={cardStyle}>
-                  <div style={{fontWeight:700,marginBottom:12,color:"var(--text)"}}>⚠️ Lejárt számlák (top 5)</div>
-                  {expired.slice().sort((a,b)=>getGross(b)-getGross(a)).slice(0,5).map(d=>(
-                    <div key={d.id} onClick={()=>setSelectedDoc(d)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid var(--border)",cursor:"pointer"}}>
-                      <div>
-                        <div style={{fontWeight:600,fontSize:13,color:"var(--text)"}}>{(d.partner && d.partner.name) || "–"}</div>
-                        <div style={{fontSize:11,color:"var(--text-muted)"}}>{d.invoice_number} · Lejárt: {fmtDate(d.due_date)}</div>
+              {/* Akciót igénylő számlák: lejárt + fizetetlen */}
+              {(expired.length > 0 || outstanding.length > 0) && (
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(380px,1fr))",gap:20}}>
+                  {expired.length > 0 && (
+                    <div style={cardStyle}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                        <div style={{fontWeight:700,color:"var(--text)"}}>🔴 Lejárt számlák</div>
+                        <span style={{fontSize:11,color:"var(--text-muted)"}}>{expired.length} db · {fmtCompact(totalExpired)}</span>
                       </div>
-                      <div style={{fontWeight:800,color:"#ef4444",fontSize:14}}>{fmt(getGross(d), d.currency)}</div>
+                      {expired.slice().sort((a,b)=>getGross(b)-getGross(a)).slice(0,5).map(d=>(
+                        <MiniInvoiceRow key={d.id} d={d} onClick={()=>setSelectedDoc(d)} color="#ef4444"/>
+                      ))}
                     </div>
-                  ))}
+                  )}
+                  {outstanding.length > 0 && (
+                    <div style={cardStyle}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                        <div style={{fontWeight:700,color:"var(--text)"}}>⏳ Fizetetlen számlák</div>
+                        <span style={{fontSize:11,color:"var(--text-muted)"}}>{outstanding.length} db · {fmtCompact(totalOutstanding)}</span>
+                      </div>
+                      {outstanding.slice().sort((a,b)=>getGross(b)-getGross(a)).slice(0,5).map(d=>(
+                        <MiniInvoiceRow key={d.id} d={d} onClick={()=>setSelectedDoc(d)} color="#f59e0b"/>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
