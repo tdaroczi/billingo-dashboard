@@ -25,13 +25,91 @@ const BASE = "/billingo-api";
 
 const { useState, useCallback, useEffect } = React;
 
+// ── Magyar fordítások ──
+const STATUS_LABEL = {
+  paid: "Fizetve",
+  outstanding: "Fizetetlen",
+  unpaid: "Fizetetlen",
+  expired: "Lejárt",
+  late: "Késve fizetve",
+  cancelled: "Sztornózva",
+  draft: "Piszkozat",
+};
+const STATUS_COLOR = {
+  paid: "#d1fae5 #065f46",
+  outstanding: "#fef3c7 #92400e",
+  unpaid: "#fef3c7 #92400e",
+  expired: "#fee2e2 #991b1b",
+  late: "#fed7aa #9a3412",
+  cancelled: "#f1f5f9 #475569",
+  draft: "#dbeafe #1e40af",
+};
+const TYPE_LABEL = {
+  invoice: "Számla",
+  proforma: "Díjbekérő",
+  draft: "Piszkozat",
+  advance: "Előlegszámla",
+  receipt: "Nyugta",
+  reverse_invoice: "Sztornó",
+  cancel_invoice: "Sztornó",
+  modification: "Módosító",
+  modify_invoice: "Módosító",
+  corrective_invoice: "Helyesbítő",
+  delivery: "Szállítólevél",
+};
+const PMETHOD_LABEL = {
+  cash: "Készpénz",
+  bankcard: "Bankkártya",
+  online_bankcard: "Online kártya",
+  wire_transfer: "Átutalás",
+  transfer: "Átutalás",
+  paypal: "PayPal",
+  szep_card: "SZÉP kártya",
+  szep_card_oktatas: "SZÉP (OKJ)",
+  szep_card_szabadido: "SZÉP (Szabadidő)",
+  szep_card_vendeglatas: "SZÉP (Vendéglátás)",
+  cash_on_delivery: "Utánvét",
+  voucher: "Utalvány",
+  barion: "Barion",
+  barter: "Barter",
+  coupon: "Kupon",
+  ep_card: "EP kártya",
+  factoring: "Faktoring",
+  prepayment: "Előleg",
+  set_off: "Beszámítás",
+  other: "Egyéb",
+  exchange_voucher: "Csere",
+  payu: "PayU",
+  pick_pack_pont: "PickPackPont",
+};
+
+const tStatus = s => STATUS_LABEL[s] || s || "–";
+const tType = t => TYPE_LABEL[t] || t || "–";
+const tPMethod = m => PMETHOD_LABEL[m] || m || "–";
+
 const fmt = (n, cur) => {
   if (cur == null) cur = "HUF";
   return n == null ? "–" : new Intl.NumberFormat("hu-HU", { style:"currency", currency:cur, maximumFractionDigits:0 }).format(n);
 };
 const fmtDate = d => d ? new Date(d).toLocaleDateString("hu-HU") : "–";
+const daysBetween = (a, b) => a && b ? Math.round((new Date(b) - new Date(a)) / 86400000) : null;
 
-// ── Saját SVG chart komponensek (Recharts helyett) ──
+// Robosztus összegolvasás (Billingo eltérő mezőneveket használhat)
+const getGross = d => {
+  const s = d.summary || {};
+  return s.gross_amount || s.gross_price || s.gross || s.total_gross || 0;
+};
+const getNet = d => {
+  const s = d.summary || {};
+  return s.net_amount || s.net_price || s.net || s.total_net || 0;
+};
+
+// Fizetetlen-szerű státuszok (lejárt is)
+const isOutstanding = d => d.payment_status === "outstanding" || d.payment_status === "unpaid";
+const isExpired = d => d.payment_status === "expired" || d.payment_status === "late";
+const isPaid = d => d.payment_status === "paid";
+
+// ── SVG chart komponensek ──
 function BarChartSimple({ data, height }) {
   height = height || 200;
   if (!data || data.length === 0) {
@@ -56,7 +134,7 @@ function BarChartSimple({ data, height }) {
         <g key={i}>
           <line x1={padLeft} y1={t.y} x2={W - padRight} y2={t.y} stroke="var(--border)" strokeDasharray="3 3"/>
           <text x={padLeft - 5} y={t.y + 3} fontSize="10" fill="var(--text-muted)" textAnchor="end">
-            {(t.value/1000).toFixed(0) + "k"}
+            {t.value >= 1000000 ? (t.value/1000000).toFixed(1) + "M" : (t.value/1000).toFixed(0) + "k"}
           </text>
         </g>
       ))}
@@ -67,7 +145,7 @@ function BarChartSimple({ data, height }) {
         return (
           <g key={i}>
             <title>{d.label + ": " + fmt(d.value)}</title>
-            <rect x={x} y={y} width={barW} height={h} fill="#6366f1" rx="3"/>
+            <rect x={x} y={y} width={barW} height={h} fill={d.color || "#6366f1"} rx="3"/>
             <text x={x + barW/2} y={H - 12} fontSize="10" textAnchor="middle" fill="var(--text-muted)">
               {d.label}
             </text>
@@ -88,7 +166,7 @@ function PieChartSimple({ data, size }) {
   const cx = size / 2, cy = size / 2, r = size / 2 - 5;
   const lr = r * 0.62;
 
-  const slices = data.map((d, i) => {
+  const slices = data.map((d) => {
     const angle = (d.value / total) * 2 * Math.PI;
     const x1 = cx + r * Math.cos(cumA);
     const y1 = cy + r * Math.sin(cumA);
@@ -138,16 +216,9 @@ function PieChartSimple({ data, size }) {
 }
 
 function StatusBadge({ status }) {
-  const cfg = {
-    paid: {l:"Fizetve", c:"#d1fae5 #065f46"},
-    unpaid: {l:"Fizetetlen", c:"#fef3c7 #92400e"},
-    expired: {l:"Lejárt", c:"#fee2e2 #991b1b"},
-    cancelled: {l:"Sztornó", c:"#f1f5f9 #475569"},
-    draft: {l:"Piszkozat", c:"#dbeafe #1e40af"}
-  };
-  const s = cfg[status] || {l:status, c:"#f1f5f9 #475569"};
-  const parts = s.c.split(" ");
-  return <span style={{background:parts[0],color:parts[1],padding:"2px 8px",borderRadius:999,fontSize:11,fontWeight:700}}>{s.l}</span>;
+  const c = STATUS_COLOR[status] || "#f1f5f9 #475569";
+  const parts = c.split(" ");
+  return <span style={{background:parts[0],color:parts[1],padding:"2px 8px",borderRadius:999,fontSize:11,fontWeight:700}}>{tStatus(status)}</span>;
 }
 
 function KpiCard({ icon, label, value, sub, color }) {
@@ -169,16 +240,7 @@ function ErrorScreen({ error, onRetry }) {
       <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:24,padding:40,maxWidth:480,boxShadow:"0 20px 60px rgba(0,0,0,0.08)"}}>
         <div style={{fontSize:48,textAlign:"center",marginBottom:12}}>⚠️</div>
         <h1 style={{margin:"0 0 8px",fontSize:22,fontWeight:800,textAlign:"center"}}>Nem sikerült csatlakozni</h1>
-        <p style={{color:"var(--text-muted)",fontSize:14,textAlign:"center",marginTop:0}}>{error || "Ismeretlen hiba"}</p>
-        <div style={{background:"#fef3c7",border:"1px solid #fbbf24",borderRadius:12,padding:14,fontSize:13,color:"#78350f",marginTop:16}}>
-          <strong>Ellenőrizd:</strong>
-          <ul style={{margin:"6px 0 0",paddingLeft:20,lineHeight:1.6}}>
-            <li>Netlify → Site settings → <strong>Environment variables</strong></li>
-            <li>Van-e <code style={{background:"#fde68a",padding:"1px 5px",borderRadius:4}}>BILLINGO_API_KEY</code> változó?</li>
-            <li>Helyes az értéke?</li>
-            <li>Új deploy lefutott a változtatás után?</li>
-          </ul>
-        </div>
+        <p style={{color:"var(--text-muted)",fontSize:14,textAlign:"center",marginTop:0,wordBreak:"break-word"}}>{error || "Ismeretlen hiba"}</p>
         <button onClick={onRetry} style={{width:"100%",padding:"12px",borderRadius:12,border:"none",background:"linear-gradient(135deg,#6366f1,#8b5cf6)",color:"white",fontWeight:700,fontSize:14,cursor:"pointer",marginTop:16}}>
           🔄 Újrapróbálkozás
         </button>
@@ -188,15 +250,14 @@ function ErrorScreen({ error, onRetry }) {
 }
 
 function InvoiceRow({ d, onView }) {
-  const typeLabel = { invoice:"Számla", proforma:"Díjbekérő", draft:"Piszkozat", advance:"Előleg", receipt:"Nyugta" };
   return (
     <tr style={{borderBottom:"1px solid var(--border)"}}>
       <td style={{padding:"10px 12px",fontFamily:"monospace",fontWeight:700,fontSize:12,color:"var(--text)"}}>{d.invoice_number||"–"}</td>
       <td style={{padding:"10px 12px",fontWeight:600,fontSize:13,color:"var(--text)"}}>{(d.partner && d.partner.name) || "–"}</td>
-      <td style={{padding:"10px 12px",fontSize:13,color:"var(--text-muted)"}}>{typeLabel[d.type]||d.type}</td>
+      <td style={{padding:"10px 12px",fontSize:13,color:"var(--text-muted)"}}>{tType(d.type)}</td>
       <td style={{padding:"10px 12px",fontSize:13,color:"var(--text-muted)"}}>{fmtDate(d.invoice_date)}</td>
-      <td style={{padding:"10px 12px",fontSize:13,color:d.payment_status==="expired"?"#ef4444":"var(--text-muted)"}}>{fmtDate(d.due_date)}</td>
-      <td style={{padding:"10px 12px",fontWeight:700,fontSize:13,color:"var(--text)"}}>{fmt(d.summary && d.summary.gross_price, d.currency)}</td>
+      <td style={{padding:"10px 12px",fontSize:13,color:isExpired(d)?"#ef4444":"var(--text-muted)"}}>{fmtDate(d.due_date)}</td>
+      <td style={{padding:"10px 12px",fontWeight:700,fontSize:13,color:"var(--text)"}}>{fmt(getGross(d), d.currency)}</td>
       <td style={{padding:"10px 12px"}}><StatusBadge status={d.payment_status}/></td>
       <td style={{padding:"10px 12px"}}><button onClick={()=>onView(d)} style={{background:"#6366f110",border:"none",borderRadius:8,padding:"4px 8px",color:"#6366f1",cursor:"pointer",fontSize:12}}>👁 Részlet</button></td>
     </tr>
@@ -204,8 +265,31 @@ function InvoiceRow({ d, onView }) {
 }
 
 function Modal({ doc, onClose }) {
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState(null);
+
   if (!doc) return null;
-  const summary = doc.summary || {};
+
+  const downloadPdf = async () => {
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      const r = await fetch(BASE + "/documents/" + doc.id + "/download");
+      if (!r.ok) {
+        const txt = await r.text();
+        throw new Error("PDF letöltése sikertelen: " + txt.substring(0,100));
+      }
+      const blob = await r.blob();
+      const url = URL.createObjectURL(blob);
+      window.open(url, "_blank");
+      // Tisztítás kicsit később
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    } catch (e) {
+      setDownloadError(e.message);
+    }
+    setDownloading(false);
+  };
+
   return (
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:999,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
       <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:20,width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",boxShadow:"0 25px 50px rgba(0,0,0,0.2)"}}>
@@ -218,7 +302,14 @@ function Modal({ doc, onClose }) {
         </div>
         <div style={{padding:24,display:"flex",flexDirection:"column",gap:16}}>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            {[["Típus",doc.type],["Státusz",doc.payment_status],["Kiállítás",fmtDate(doc.invoice_date)],["Lejárat",fmtDate(doc.due_date)],["Fizetve",fmtDate(doc.paid_date)],["Fizetési mód",doc.payment_method]].map(([l,v])=>(
+            {[
+              ["Típus", tType(doc.type)],
+              ["Státusz", tStatus(doc.payment_status)],
+              ["Kiállítás", fmtDate(doc.invoice_date)],
+              ["Lejárat", fmtDate(doc.due_date)],
+              ["Fizetve", fmtDate(doc.paid_date)],
+              ["Fizetési mód", tPMethod(doc.payment_method)]
+            ].map(([l,v])=>(
               <div key={l} style={{background:"var(--bg)",borderRadius:10,padding:"10px 12px"}}>
                 <div style={{fontSize:11,color:"var(--text-muted)",marginBottom:3}}>{l}</div>
                 <div style={{fontWeight:700,fontSize:13,color:"var(--text)"}}>{v||"–"}</div>
@@ -229,21 +320,24 @@ function Modal({ doc, onClose }) {
             <div style={{fontSize:11,fontWeight:700,textTransform:"uppercase",letterSpacing:1,color:"var(--text-muted)",marginBottom:12}}>Összesítő</div>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:8,fontSize:14}}>
               <span style={{color:"var(--text-muted)"}}>Nettó</span>
-              <span>{fmt(summary.net_price,doc.currency)}</span>
+              <span>{fmt(getNet(doc),doc.currency)}</span>
             </div>
             <div style={{display:"flex",justifyContent:"space-between",marginBottom:12,fontSize:14}}>
               <span style={{color:"var(--text-muted)"}}>ÁFA</span>
-              <span>{fmt((summary.gross_price||0)-(summary.net_price||0),doc.currency)}</span>
+              <span>{fmt(getGross(doc) - getNet(doc),doc.currency)}</span>
             </div>
             <div style={{display:"flex",justifyContent:"space-between",fontSize:16,fontWeight:800,borderTop:"1px solid var(--border)",paddingTop:12}}>
               <span>Bruttó</span>
-              <span style={{color:"#6366f1"}}>{fmt(summary.gross_price,doc.currency)}</span>
+              <span style={{color:"#6366f1"}}>{fmt(getGross(doc),doc.currency)}</span>
             </div>
           </div>
-          <a href={"https://app.billingo.hu/szamlak/" + doc.id} target="_blank" rel="noreferrer"
-            style={{display:"block",textAlign:"center",padding:"12px",borderRadius:12,background:"#6366f1",color:"white",fontWeight:700,textDecoration:"none",fontSize:14}}>
-            Megnyitás Billingóban ↗
-          </a>
+          {downloadError && (
+            <div style={{background:"#fee2e2",color:"#991b1b",padding:"10px 14px",borderRadius:10,fontSize:13}}>{downloadError}</div>
+          )}
+          <button onClick={downloadPdf} disabled={downloading}
+            style={{padding:"12px",borderRadius:12,background:"#6366f1",color:"white",fontWeight:700,fontSize:14,border:"none",cursor:downloading?"not-allowed":"pointer",opacity:downloading?0.7:1}}>
+            {downloading ? "PDF letöltése..." : "📄 PDF megnyitása"}
+          </button>
         </div>
       </div>
     </div>
@@ -273,35 +367,40 @@ function App() {
           let parsed;
           try { parsed = JSON.parse(txt); } catch (_) { parsed = null; }
           let msg;
-          if (!parsed) {
-            msg = txt || ("HTTP " + r.status);
-          } else if (typeof parsed === "string") {
-            msg = parsed;
-          } else if (typeof parsed.error === "string") {
+          if (!parsed) msg = txt || ("HTTP " + r.status);
+          else if (typeof parsed === "string") msg = parsed;
+          else if (typeof parsed.error === "string") {
             msg = parsed.error;
             if (parsed.details) msg += " — " + parsed.details;
-          } else if (parsed.message) {
-            msg = parsed.message;
-          } else {
-            msg = JSON.stringify(parsed);
           }
+          else if (parsed.message) msg = parsed.message;
+          else msg = JSON.stringify(parsed);
           throw new Error(msg);
         }
         return r.json();
       };
 
-      const results = await Promise.all([
-        safeFetch(BASE + "/organization"),
-        safeFetch(BASE + "/documents?per_page=100&page=1"),
-        safeFetch(BASE + "/documents?per_page=100&page=2").catch(()=>({data:[]})),
-        safeFetch(BASE + "/documents?per_page=100&page=3").catch(()=>({data:[]})),
-        safeFetch(BASE + "/partners?per_page=100&page=1"),
-        safeFetch(BASE + "/partners?per_page=100&page=2").catch(()=>({data:[]})),
-      ]);
-      const orgR = results[0], d1 = results[1], d2 = results[2], d3 = results[3], p1 = results[4], p2 = results[5];
+      // Több oldalt párhuzamosan
+      const docPromises = [];
+      for (let p = 1; p <= 5; p++) {
+        docPromises.push(safeFetch(BASE + "/documents?per_page=100&page=" + p).catch(()=>({data:[]})));
+      }
+      const partnerPromises = [];
+      for (let p = 1; p <= 3; p++) {
+        partnerPromises.push(safeFetch(BASE + "/partners?per_page=100&page=" + p).catch(()=>({data:[]})));
+      }
+
+      const [orgR, ...rest] = await Promise.all([safeFetch(BASE + "/organization"), ...docPromises, ...partnerPromises]);
+      const docResults = rest.slice(0, 5);
+      const partnerResults = rest.slice(5);
+
       setOrg(orgR);
-      setDocs([].concat(d1.data||[], d2.data||[], d3.data||[]));
-      setPartners([].concat(p1.data||[], p2.data||[]));
+      const allDocs = [];
+      docResults.forEach(r => { if (r && r.data) allDocs.push.apply(allDocs, r.data); });
+      const allPartners = [];
+      partnerResults.forEach(r => { if (r && r.data) allPartners.push.apply(allPartners, r.data); });
+      setDocs(allDocs);
+      setPartners(allPartners);
     } catch(e) {
       console.error(e);
       setError(e.message);
@@ -322,28 +421,87 @@ function App() {
     );
   }
 
-  const paid = docs.filter(d=>d.payment_status==="paid");
-  const unpaid = docs.filter(d=>d.payment_status==="unpaid");
-  const expired = docs.filter(d=>d.payment_status==="expired");
+  // ── Statisztikák ──
+  const paid = docs.filter(isPaid);
+  const outstanding = docs.filter(isOutstanding);
+  const expired = docs.filter(isExpired);
 
+  const totalRevenue = paid.reduce((s,d)=>s+getGross(d),0);
+  const totalOutstanding = outstanding.reduce((s,d)=>s+getGross(d),0);
+  const totalExpired = expired.reduce((s,d)=>s+getGross(d),0);
+  const avgInvoice = paid.length > 0 ? totalRevenue / paid.length : 0;
+
+  // Idei vs tavalyi
+  const now = new Date();
+  const thisYear = now.getFullYear();
+  const lastYear = thisYear - 1;
+  const ytdPaid = paid.filter(d => {
+    const dt = d.paid_date || d.invoice_date;
+    return dt && new Date(dt).getFullYear() === thisYear;
+  });
+  const lastYearPaid = paid.filter(d => {
+    const dt = d.paid_date || d.invoice_date;
+    return dt && new Date(dt).getFullYear() === lastYear;
+  });
+  const ytdRevenue = ytdPaid.reduce((s,d)=>s+getGross(d),0);
+  const lastYearRevenue = lastYearPaid.reduce((s,d)=>s+getGross(d),0);
+
+  // Átlagos fizetési idő (paid_date - invoice_date)
+  const paymentDays = paid
+    .map(d => daysBetween(d.invoice_date, d.paid_date))
+    .filter(n => n != null && n >= 0 && n < 365);
+  const avgPayDays = paymentDays.length > 0
+    ? Math.round(paymentDays.reduce((s,n)=>s+n,0) / paymentDays.length)
+    : null;
+
+  // Havi bevétel (utolsó 12 hónap, fizetve)
   const monthly = {};
   paid.forEach(d => {
     const k = (d.paid_date || d.invoice_date || "").substring(0,7);
-    if (k) monthly[k] = (monthly[k]||0) + ((d.summary && d.summary.gross_price)||0);
+    if (k) monthly[k] = (monthly[k]||0) + getGross(d);
   });
-  const monthlyData = Object.entries(monthly).sort().slice(-12).map(([k,v])=>({label: k.substring(2).replace("-","."), value: Math.round(v)}));
+  const monthlyData = Object.entries(monthly).sort().slice(-12).map(([k,v])=>({
+    label: k.substring(2).replace("-","."),
+    value: Math.round(v)
+  }));
 
+  // Számla típus megoszlás
+  const typeCounts = {};
+  docs.forEach(d => { if (d.type) typeCounts[d.type] = (typeCounts[d.type]||0) + 1; });
+  const TYPE_COLORS = ["#6366f1","#22d3ee","#f59e0b","#10b981","#ef4444","#8b5cf6","#94a3b8"];
+  const typeData = Object.entries(typeCounts).map(([k,v],i)=>({
+    name: tType(k), value: v, color: TYPE_COLORS[i % TYPE_COLORS.length]
+  })).sort((a,b)=>b.value-a.value);
+
+  // Top 5 partner bevétel szerint
+  const partnerRevenue = {};
+  paid.forEach(d => {
+    const name = (d.partner && d.partner.name) || "–";
+    if (!partnerRevenue[name]) partnerRevenue[name] = { total: 0, count: 0 };
+    partnerRevenue[name].total += getGross(d);
+    partnerRevenue[name].count += 1;
+  });
+  const topPartners = Object.entries(partnerRevenue)
+    .map(([name, v]) => ({name, total: v.total, count: v.count}))
+    .sort((a,b)=>b.total-a.total)
+    .slice(0, 5);
+
+  // Státusz pie
   const statusData = [
     {name:"Fizetve", value:paid.length, color:"#10b981"},
-    {name:"Fizetetlen", value:unpaid.length, color:"#f59e0b"},
+    {name:"Fizetetlen", value:outstanding.length, color:"#f59e0b"},
     {name:"Lejárt", value:expired.length, color:"#ef4444"},
   ].filter(d=>d.value>0);
 
+  // Számla szűrés
   const filtered = docs.filter(d => {
     const q = search.toLowerCase();
     const partnerName = (d.partner && d.partner.name) || "";
     const matchSearch = !q || partnerName.toLowerCase().indexOf(q) >= 0 || (d.invoice_number||"").toLowerCase().indexOf(q) >= 0;
-    const matchStatus = statusFilter === "all" || d.payment_status === statusFilter;
+    let matchStatus = statusFilter === "all";
+    if (statusFilter === "paid") matchStatus = isPaid(d);
+    else if (statusFilter === "outstanding") matchStatus = isOutstanding(d);
+    else if (statusFilter === "expired") matchStatus = isExpired(d);
     return matchSearch && matchStatus;
   });
 
@@ -357,6 +515,22 @@ function App() {
   const selectStyle = {padding:"8px 12px",borderRadius:10,border:"1px solid var(--border)",background:"var(--bg)",color:"var(--text)",fontSize:13,outline:"none"};
 
   const tabTitles = { overview:"Áttekintés", invoices:"Számlák", partners:"Partnerek" };
+  const cardStyle = {background:"var(--card)",border:"1px solid var(--border)",borderRadius:16,padding:20};
+
+  // Bevétel változás % (idei vs tavalyi, ugyanazon naptári napig)
+  const dayOfYear = Math.floor((now - new Date(thisYear,0,0)) / 86400000);
+  const lastYearSamePeriod = paid.filter(d => {
+    const dt = d.paid_date || d.invoice_date;
+    if (!dt) return false;
+    const dtO = new Date(dt);
+    if (dtO.getFullYear() !== lastYear) return false;
+    const lyDayOfYear = Math.floor((dtO - new Date(lastYear,0,0)) / 86400000);
+    return lyDayOfYear <= dayOfYear;
+  });
+  const lastYearSamePeriodRevenue = lastYearSamePeriod.reduce((s,d)=>s+getGross(d),0);
+  const yoyChange = lastYearSamePeriodRevenue > 0
+    ? Math.round((ytdRevenue - lastYearSamePeriodRevenue) / lastYearSamePeriodRevenue * 100)
+    : null;
 
   return (
     <div style={{minHeight:"100vh",display:"flex"}}>
@@ -376,55 +550,103 @@ function App() {
       </div>
 
       <div style={{flex:1,overflow:"auto"}}>
-        <div style={{maxWidth:900,margin:"0 auto",padding:"32px 24px"}}>
-          <h1 style={{fontSize:22,fontWeight:800,color:"var(--text)",marginBottom:4}}>
-            {tabTitles[tab]}
-          </h1>
+        <div style={{maxWidth:1100,margin:"0 auto",padding:"32px 24px"}}>
+          <h1 style={{fontSize:22,fontWeight:800,color:"var(--text)",marginBottom:4}}>{tabTitles[tab]}</h1>
           <p style={{color:"var(--text-muted)",fontSize:13,marginBottom:28}}>{docs.length} számla · {partners.length} partner</p>
 
           {tab==="overview" && (
-            <div style={{display:"flex",flexDirection:"column",gap:24}}>
+            <div style={{display:"flex",flexDirection:"column",gap:20}}>
               {org && (
                 <div style={{background:"linear-gradient(135deg,#6366f1,#8b5cf6)",borderRadius:20,padding:24,color:"white",display:"flex",alignItems:"center",gap:16,flexWrap:"wrap"}}>
                   <div style={{width:52,height:52,borderRadius:14,background:"rgba(255,255,255,0.2)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,fontWeight:900}}>
-                    {(org.name && org.name[0]) || "B"}
+                    💼
                   </div>
                   <div style={{flex:1,minWidth:200}}>
-                    <div style={{fontWeight:800,fontSize:19}}>{org.name || ("Adószám: " + (org.tax_code || "–"))}</div>
+                    <div style={{fontWeight:800,fontSize:19}}>Adószám: {org.tax_code || "–"}</div>
                     <div style={{opacity:.85,fontSize:13,marginTop:2}}>
-                      {org.tax_code ? ("Adószám: " + org.tax_code) : null}
-                      {org.subscription && org.subscription.features && org.subscription.features.indexOf("billingo_business") >= 0 ? " · Business" : null}
-                      {org.has_nav_connection ? " · NAV ✓" : null}
+                      {org.subscription && org.subscription.features && org.subscription.features.indexOf("billingo_business") >= 0 ? "Billingo Business" : "Billingo"}
+                      {org.has_nav_connection ? " · NAV ✓" : ""}
+                      {org.subscription && org.subscription.expiration_date ? (" · Lejár: " + fmtDate(org.subscription.expiration_date)) : ""}
                     </div>
                   </div>
                 </div>
               )}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:16}}>
-                <KpiCard icon="💰" label="Bevétel (fizetve)" value={fmt(paid.reduce((s,d)=>s+((d.summary&&d.summary.gross_price)||0),0))} sub={paid.length + " kifizetett"} color="#10b981"/>
-                <KpiCard icon="⏳" label="Kintlévőség" value={fmt(unpaid.reduce((s,d)=>s+((d.summary&&d.summary.gross_price)||0),0))} sub={unpaid.length + " fizetetlen"} color="#f59e0b"/>
-                <KpiCard icon="🔴" label="Lejárt" value={fmt(expired.reduce((s,d)=>s+((d.summary&&d.summary.gross_price)||0),0))} sub={expired.length + " db"} color="#ef4444"/>
-                <KpiCard icon="👥" label="Partnerek" value={partners.length} sub="aktív ügyfél" color="#6366f1"/>
+
+              {/* Fő KPI-k */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14}}>
+                <KpiCard icon="💰" label="Bevétel idén" value={fmt(ytdRevenue)} sub={ytdPaid.length + " számla " + thisYear + "-ben"} color="#10b981"/>
+                <KpiCard icon="📈" label="Idei vs tavalyi" value={yoyChange != null ? (yoyChange >= 0 ? "+" : "") + yoyChange + "%" : "–"} sub={"Tavaly ekkor: " + fmt(lastYearSamePeriodRevenue)} color={yoyChange == null ? "#94a3b8" : yoyChange >= 0 ? "#10b981" : "#ef4444"}/>
+                <KpiCard icon="⏳" label="Kintlévőség" value={fmt(totalOutstanding)} sub={outstanding.length + " fizetetlen"} color="#f59e0b"/>
+                <KpiCard icon="🔴" label="Lejárt" value={fmt(totalExpired)} sub={expired.length + " db"} color="#ef4444"/>
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:20}}>
-                <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:16,padding:20}}>
-                  <div style={{fontWeight:700,marginBottom:16,color:"var(--text)"}}>Havi bevétel (fizetve)</div>
-                  <BarChartSimple data={monthlyData} height={200}/>
+
+              {/* Másodlagos KPI-k */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:14}}>
+                <KpiCard icon="🧾" label="Összes számla" value={docs.length} sub={paid.length + " kifizetett"} color="#6366f1"/>
+                <KpiCard icon="📊" label="Átlag számla" value={fmt(avgInvoice)} sub="kifizetettre" color="#8b5cf6"/>
+                <KpiCard icon="⏱️" label="Átlag fizetési idő" value={avgPayDays != null ? avgPayDays + " nap" : "–"} sub={paymentDays.length + " számla alapján"} color="#22d3ee"/>
+                <KpiCard icon="👥" label="Aktív partnerek" value={Object.keys(partnerRevenue).length} sub={"Összesen: " + partners.length} color="#f59e0b"/>
+              </div>
+
+              {/* Charts */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(380px,1fr))",gap:20}}>
+                <div style={cardStyle}>
+                  <div style={{fontWeight:700,marginBottom:16,color:"var(--text)"}}>Havi bevétel (utolsó 12 hónap)</div>
+                  <BarChartSimple data={monthlyData} height={220}/>
                 </div>
-                <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:16,padding:20}}>
-                  <div style={{fontWeight:700,marginBottom:16,color:"var(--text)"}}>Státusz megoszlás</div>
+                <div style={cardStyle}>
+                  <div style={{fontWeight:700,marginBottom:16,color:"var(--text)"}}>Számla státusz</div>
                   <PieChartSimple data={statusData} size={180}/>
                 </div>
               </div>
+
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(380px,1fr))",gap:20}}>
+                {/* Top 5 partner */}
+                <div style={cardStyle}>
+                  <div style={{fontWeight:700,marginBottom:12,color:"var(--text)"}}>🏆 Top 5 partner bevétel szerint</div>
+                  {topPartners.length === 0 ? (
+                    <div style={{color:"var(--text-muted)",fontSize:13,padding:"20px 0",textAlign:"center"}}>Még nincs adat</div>
+                  ) : topPartners.map((p,i) => {
+                    const max = topPartners[0].total || 1;
+                    const w = (p.total / max) * 100;
+                    return (
+                      <div key={i} style={{padding:"10px 0",borderBottom:i < topPartners.length-1 ? "1px solid var(--border)" : "none"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0,flex:1}}>
+                            <div style={{width:24,height:24,borderRadius:6,background:"#6366f120",color:"#6366f1",fontWeight:800,fontSize:11,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{i+1}</div>
+                            <span style={{fontSize:13,fontWeight:600,color:"var(--text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</span>
+                          </div>
+                          <span style={{fontSize:13,fontWeight:700,color:"var(--text)",marginLeft:8}}>{fmt(p.total)}</span>
+                        </div>
+                        <div style={{height:6,background:"var(--border)",borderRadius:3,overflow:"hidden"}}>
+                          <div style={{height:"100%",background:"linear-gradient(90deg,#6366f1,#8b5cf6)",width:w+"%",borderRadius:3}}/>
+                        </div>
+                        <div style={{fontSize:11,color:"var(--text-muted)",marginTop:3}}>{p.count} számla</div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Számla típusok */}
+                {typeData.length > 0 && (
+                  <div style={cardStyle}>
+                    <div style={{fontWeight:700,marginBottom:16,color:"var(--text)"}}>📋 Számla típusok</div>
+                    <PieChartSimple data={typeData} size={180}/>
+                  </div>
+                )}
+              </div>
+
+              {/* Lejárt számlák */}
               {expired.length > 0 && (
-                <div style={{background:"var(--card)",border:"1px solid var(--border)",borderRadius:16,padding:20}}>
-                  <div style={{fontWeight:700,marginBottom:12,color:"var(--text)"}}>⚠️ Lejárt számlák</div>
-                  {expired.slice().sort((a,b)=>((b.summary&&b.summary.gross_price)||0)-((a.summary&&a.summary.gross_price)||0)).slice(0,5).map(d=>(
-                    <div key={d.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid var(--border)"}}>
+                <div style={cardStyle}>
+                  <div style={{fontWeight:700,marginBottom:12,color:"var(--text)"}}>⚠️ Lejárt számlák (top 5)</div>
+                  {expired.slice().sort((a,b)=>getGross(b)-getGross(a)).slice(0,5).map(d=>(
+                    <div key={d.id} onClick={()=>setSelectedDoc(d)} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid var(--border)",cursor:"pointer"}}>
                       <div>
                         <div style={{fontWeight:600,fontSize:13,color:"var(--text)"}}>{(d.partner && d.partner.name) || "–"}</div>
                         <div style={{fontSize:11,color:"var(--text-muted)"}}>{d.invoice_number} · Lejárt: {fmtDate(d.due_date)}</div>
                       </div>
-                      <div style={{fontWeight:800,color:"#ef4444",fontSize:14}}>{fmt(d.summary && d.summary.gross_price, d.currency)}</div>
+                      <div style={{fontWeight:800,color:"#ef4444",fontSize:14}}>{fmt(getGross(d), d.currency)}</div>
                     </div>
                   ))}
                 </div>
@@ -439,7 +661,7 @@ function App() {
                 <select value={statusFilter} onChange={e=>setStatusFilter(e.target.value)} style={selectStyle}>
                   <option value="all">Minden státusz</option>
                   <option value="paid">Fizetve</option>
-                  <option value="unpaid">Fizetetlen</option>
+                  <option value="outstanding">Fizetetlen</option>
                   <option value="expired">Lejárt</option>
                 </select>
                 <span style={{fontSize:12,color:"var(--text-muted)",marginLeft:"auto"}}>{filtered.length} db</span>
