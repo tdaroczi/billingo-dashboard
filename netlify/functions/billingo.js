@@ -19,19 +19,28 @@ exports.handler = async (event) => {
   // Path normalizálás:
   // /.netlify/functions/billingo/documents → /documents
   // /billingo-api/documents → /documents
-  let path = event.path
+  let path = (event.path || "")
     .replace(/^\/\.netlify\/functions\/billingo/, "")
     .replace(/^\/billingo-api/, "");
 
   if (!path || path === "/") path = "";
   if (path && !path.startsWith("/")) path = "/" + path;
 
-  const queryString = event.rawQuery
-    || (event.queryStringParameters && Object.keys(event.queryStringParameters).length > 0
-        ? "?" + new URLSearchParams(event.queryStringParameters).toString()
-        : "");
+  // Query string építés – Netlify több formátumban adja át
+  let queryString = "";
+  if (event.rawQuery && event.rawQuery.length > 0) {
+    queryString = "?" + event.rawQuery;
+  } else if (event.queryStringParameters && typeof event.queryStringParameters === "object") {
+    const params = new URLSearchParams();
+    for (const key of Object.keys(event.queryStringParameters)) {
+      const val = event.queryStringParameters[key];
+      if (val != null) params.append(key, val);
+    }
+    const qs = params.toString();
+    if (qs) queryString = "?" + qs;
+  }
 
-  const billingoUrl = `https://api.billingo.hu/v3${path}${queryString}`;
+  const billingoUrl = "https://api.billingo.hu/v3" + path + queryString;
 
   try {
     const response = await fetch(billingoUrl, {
@@ -57,7 +66,8 @@ exports.handler = async (event) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         error: "Failed to reach Billingo API",
-        details: error.message
+        details: error.message,
+        url: billingoUrl
       })
     };
   }
