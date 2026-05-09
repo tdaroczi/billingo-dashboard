@@ -271,8 +271,21 @@ function App() {
         if (!r.ok) {
           const txt = await r.text();
           let parsed;
-          try { parsed = JSON.parse(txt); } catch (_) { parsed = { error: txt }; }
-          throw new Error(parsed.error || ("HTTP " + r.status));
+          try { parsed = JSON.parse(txt); } catch (_) { parsed = null; }
+          let msg;
+          if (!parsed) {
+            msg = txt || ("HTTP " + r.status);
+          } else if (typeof parsed === "string") {
+            msg = parsed;
+          } else if (typeof parsed.error === "string") {
+            msg = parsed.error;
+            if (parsed.details) msg += " — " + parsed.details;
+          } else if (parsed.message) {
+            msg = parsed.message;
+          } else {
+            msg = JSON.stringify(parsed);
+          }
+          throw new Error(msg);
         }
         return r.json();
       };
