@@ -55,7 +55,7 @@ Elvart fiktiv mintazatok:
 - tobb kisebb, regen lejart szamla,
 - egy-ket nagy osszegu, azonnali utan kovetest igenylo lejart szamla,
 - aktualis honapban beveteli visszaeses vagy eros penzaramlas-kitetettseg,
-- hianyos partneradatok, peldaul nincs email cim,
+- hianyos partneradatok, peldaul nincs email cim a Billingo szamlakikuldeshez,
 - visszatero havi dijas ugyfelek.
 
 ## Fo kepernyok

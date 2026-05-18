@@ -647,7 +647,7 @@ function App() {
       note = "A fizetési mintázat alapján érdemes előre beállított, udvarias utánkövetést használni.";
     } else if (p.segment === "missing_email") {
       color = "#8b5cf6";
-      note = "Hiányzik a levélcím, ezért az automatizált utánkövetés nem megbízható.";
+      note = "Hiányzik az email cím, ezért a Billingo nem tudja automatikusan kiküldeni a számlát, és az utánkövetés sem megbízható.";
     } else if (p.segment === "high_value") {
       color = "#0ea5e9";
       note = "Magas értékű ügyfél, akinek a megtartása bevételi szempontból fontos.";
@@ -737,7 +737,7 @@ function App() {
     },
     {
       title: "Adatminőség",
-      text: missingEmailPartners.length > 0 ? missingEmailPartners.length + " ügyfélnél hiányzik a levélcím, ez akadályozhatja az automatizált utánkövetést." : "A kiemelt ügyfeleknél az utánkövetéshez szükséges kapcsolati adatok megvannak.",
+      text: missingEmailPartners.length > 0 ? missingEmailPartners.length + " ügyfélnél hiányzik az email cím, ezért a Billingo nem tudja automatikusan kiküldeni a számlát." : "A kiemelt ügyfeleknél az utánkövetéshez szükséges kapcsolati adatok megvannak.",
       tone: missingEmailPartners.length > 0 ? "Javítandó" : "Rendben",
       color: missingEmailPartners.length > 0 ? "#f59e0b" : "#10b981"
     }
@@ -749,8 +749,8 @@ function App() {
   }));
   if (missingEmailPartners.length > 0) {
     todaysActions.push({
-      title: "Hiányzó levélcím pótlása",
-      text: missingEmailPartners[0].name + " ügyfélnél nincs rögzített levélcím.",
+      title: "Hiányzó email cím pótlása",
+      text: missingEmailPartners[0].name + " ügyfélnél nincs rögzített email cím.",
       color: "#6366f1"
     });
   }
@@ -1223,7 +1223,7 @@ function App() {
                       {p.partner.emails && p.partner.emails[0] ? (
                         <div style={{fontSize:11,color:"var(--text-muted)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",marginTop:6}}>{p.partner.emails[0]}</div>
                       ) : (
-                        <div style={{fontSize:11,color:"#ef4444",fontWeight:800,marginTop:6}}>Hiányzó levélcím</div>
+                        <div style={{fontSize:11,color:"#ef4444",fontWeight:800,marginTop:6}}>Hiányzó email cím</div>
                       )}
                     </div>
                   </div>

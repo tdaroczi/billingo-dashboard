@@ -167,7 +167,7 @@ Mire jó?
 - jelzi, hol lehet bevételnövekedés,
 - jelzi, hol van fizetési kockázat,
 - segít észrevenni a lemorzsolódó ügyfeleket,
-- megmutatja, ha az automatizált utánkövetéshez hiányzik például a levélcím.
+- megmutatja, ha a Billingo számlakiküldéséhez vagy az automatizált utánkövetéshez hiányzik az email cím.
 
 Bemutatási mondat:
 
