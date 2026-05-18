@@ -81,7 +81,24 @@ const fmtCompact = (n) => {
   if (Math.abs(n) >= 1000) return Math.round(n/1000) + " e Ft";
   return Math.round(n) + " Ft";
 };
-const fmtDate = d => d ? new Date(d).toLocaleDateString("hu-HU") : "–";
+const parseDateValue = d => {
+  if (!d) return null;
+  if (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d)) {
+    const [year, month, day] = d.split("-").map(Number);
+    return new Date(year, month - 1, day, 12, 0, 0);
+  }
+  return new Date(d);
+};
+const getAnalysisDate = () => {
+  const generatedAt = BEMUTATO_MOD && window.BILLINGO_DEMO_DATA && window.BILLINGO_DEMO_DATA.generatedAt;
+  return generatedAt ? parseDateValue(generatedAt) : new Date();
+};
+const daysBetween = (later, earlier) => {
+  const laterDate = later instanceof Date ? later : parseDateValue(later);
+  const earlierDate = earlier instanceof Date ? earlier : parseDateValue(earlier);
+  return Math.round((laterDate - earlierDate) / 86400000);
+};
+const fmtDate = d => d ? parseDateValue(d).toLocaleDateString("hu-HU") : "–";
 
 // ── Robosztus mezőolvasók (AAM/KATA fix) ──
 const getNet = d => {
@@ -323,7 +340,7 @@ function Modal({ doc, onClose }) {
   const net = getNet(doc);
   const vat = getVat(doc);
   const gross = getGross(doc);
-  const overdueDays = Math.max(0, Math.round((new Date() - new Date(doc.due_date)) / 86400000));
+  const overdueDays = Math.max(0, daysBetween(getAnalysisDate(), doc.due_date));
   const invoiceExplanation = isExpired(doc)
     ? "Ez a számla lejárt, ezért utánkövetést igényel. A bemutató rendszer ezt a nyitott teendők közé sorolja."
     : isOutstanding(doc)
@@ -506,7 +523,7 @@ function App() {
   const avgInvoice = paid.length > 0 ? totalRevenue / paid.length : 0;
 
   // Időablakok
-  const now = new Date();
+  const now = getAnalysisDate();
   const thisYear = now.getFullYear();
   const lastYear = thisYear - 1;
   const thisMonth = now.getMonth(); // 0-11
@@ -517,7 +534,7 @@ function App() {
   const inDateRange = (d, year, month) => {
     const dt = getPaidDate(d) || d.invoice_date;
     if (!dt) return false;
-    const o = new Date(dt);
+    const o = parseDateValue(dt);
     if (month != null) return o.getFullYear() === year && o.getMonth() === month;
     return o.getFullYear() === year;
   };
@@ -537,7 +554,7 @@ function App() {
   const dayOfYear = Math.floor((now - new Date(thisYear,0,0)) / 86400000);
   const lastYearSamePeriod = lastYearPaid.filter(d => {
     const dt = getPaidDate(d) || d.invoice_date;
-    const ly = Math.floor((new Date(dt) - new Date(lastYear,0,0)) / 86400000);
+    const ly = Math.floor((parseDateValue(dt) - new Date(lastYear,0,0)) / 86400000);
     return ly <= dayOfYear;
   });
   const lastYearSamePeriodRevenue = lastYearSamePeriod.reduce((s,d)=>s+getGross(d),0);
@@ -561,12 +578,12 @@ function App() {
     if (!name) return;
     const dt = d.invoice_date;
     if (!dt) return;
-    if (!partnerFirstInvoice[name] || new Date(dt) < new Date(partnerFirstInvoice[name])) {
+    if (!partnerFirstInvoice[name] || parseDateValue(dt) < parseDateValue(partnerFirstInvoice[name])) {
       partnerFirstInvoice[name] = dt;
     }
   });
   const newPartnersThisMonth = Object.values(partnerFirstInvoice).filter(dt => {
-    const o = new Date(dt);
+    const o = parseDateValue(dt);
     return o.getFullYear() === thisYear && o.getMonth() === thisMonth;
   }).length;
 
@@ -612,9 +629,9 @@ function App() {
     const openTotal = openDocs.reduce((s,d)=>s+getGross(d),0);
     const lastInvoiceDate = partnerDocs.reduce((latest,d)=>{
       if (!d.invoice_date) return latest;
-      return !latest || new Date(d.invoice_date) > new Date(latest) ? d.invoice_date : latest;
+      return !latest || parseDateValue(d.invoice_date) > parseDateValue(latest) ? d.invoice_date : latest;
     }, null);
-    const daysSinceLastInvoice = lastInvoiceDate ? Math.round((now - new Date(lastInvoiceDate)) / 86400000) : null;
+    const daysSinceLastInvoice = lastInvoiceDate ? daysBetween(now, lastInvoiceDate) : null;
     const lateRate = partnerDocs.length > 0 ? Math.round(latePaidDocs.length / partnerDocs.length * 100) : 0;
     let label = tSegment(p.segment);
     let color = "#6366f1";
@@ -641,6 +658,7 @@ function App() {
   const lateProfiles = partnerProfiles.filter(p => p.lateRate >= 30 || p.partner.segment === "high_value_late" || p.partner.segment === "late_small").sort((a,b)=>b.openTotal-a.openTotal || b.lateRate-a.lateRate).slice(0,5);
   const dormantProfiles = partnerProfiles.filter(p => p.partner.segment === "dormant" || (p.daysSinceLastInvoice != null && p.daysSinceLastInvoice > 90)).sort((a,b)=>(b.daysSinceLastInvoice||0)-(a.daysSinceLastInvoice||0)).slice(0,5);
   const missingEmailProfiles = partnerProfiles.filter(p => !p.partner.emails || !p.partner.emails[0]);
+  const followupRiskPartnerCount = new Set(lateProfiles.concat(missingEmailProfiles).map(p => p.partner.id)).size;
 
   // Státusz pie
   const statusData = [
@@ -651,13 +669,12 @@ function App() {
 
   const openInvoices = expired.concat(outstanding);
   const urgentInvoices = openInvoices.slice().sort((a,b)=>{
-    const overdueA = Math.max(0, Math.round((now - new Date(a.due_date)) / 86400000));
-    const overdueB = Math.max(0, Math.round((now - new Date(b.due_date)) / 86400000));
+    const overdueA = Math.max(0, daysBetween(now, a.due_date));
+    const overdueB = Math.max(0, daysBetween(now, b.due_date));
     return (getGross(b) + overdueB * 10000) - (getGross(a) + overdueA * 10000);
   });
   const next30Invoices = outstanding.filter(d => {
-    const due = new Date(d.due_date);
-    const days = Math.round((due - now) / 86400000);
+    const days = daysBetween(d.due_date, now);
     return days >= 0 && days <= 30;
   });
   const next30Expected = next30Invoices.reduce((s,d)=>s+getGross(d),0);
@@ -668,7 +685,7 @@ function App() {
     {name:"30+ nap", min:31, max:9999, color:"#991b1b"}
   ].map(bucket => {
     const items = expired.filter(d => {
-      const days = Math.max(0, Math.round((now - new Date(d.due_date)) / 86400000));
+      const days = Math.max(0, daysBetween(now, d.due_date));
       return days >= bucket.min && days <= bucket.max;
     });
     return Object.assign({}, bucket, {
@@ -683,7 +700,7 @@ function App() {
     {label:"22-30 nap", min:22, max:30}
   ].map((bucket, index) => {
     const value = outstanding.filter(d => {
-      const days = Math.round((new Date(d.due_date) - now) / 86400000);
+      const days = daysBetween(d.due_date, now);
       return days >= bucket.min && days <= bucket.max;
     }).reduce((s,d)=>s+getGross(d),0);
     return { label: bucket.label, value, color: ["#22d3ee","#6366f1","#8b5cf6","#f59e0b"][index] };
@@ -738,7 +755,7 @@ function App() {
     });
   }
   const actionQueue = urgentInvoices.slice(0,8).map((d,i) => {
-    const overdueDays = Math.max(0, Math.round((now - new Date(d.due_date)) / 86400000));
+    const overdueDays = Math.max(0, daysBetween(now, d.due_date));
     const amount = getGross(d);
     const reasonParts = [];
     if (isExpired(d)) reasonParts.push(overdueDays + " napja lejárt");
@@ -1128,7 +1145,7 @@ function App() {
                   </div>
                   <div style={{background:"rgba(255,255,255,.1)",border:"1px solid rgba(255,255,255,.16)",borderRadius:14,padding:14}}>
                     <div style={{fontSize:11,color:"#fecaca",fontWeight:800,textTransform:"uppercase"}}>Utánkövetési kockázat</div>
-                    <div style={{fontSize:24,fontWeight:900,marginTop:6,color:"#fecaca"}}>{lateProfiles.length + missingEmailProfiles.length}</div>
+                    <div style={{fontSize:24,fontWeight:900,marginTop:6,color:"#fecaca"}}>{followupRiskPartnerCount}</div>
                     <div style={{fontSize:11,color:"#fee2e2",marginTop:4}}>késés vagy hiányzó adat</div>
                   </div>
                 </div>

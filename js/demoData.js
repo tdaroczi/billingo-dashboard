@@ -4,7 +4,7 @@
   A szerkezet szándékosan követi a jelenlegi felület által használt mezőket.
 */
 (function () {
-  const TODAY = new Date("2026-05-17T12:00:00+02:00");
+  const TODAY = new Date("2026-05-18T12:00:00+02:00");
 
   const org = {
     name: "MesterMűhely Stúdió Kft.",
@@ -394,7 +394,7 @@
   ];
 
   window.BILLINGO_DEMO_DATA = {
-    generatedAt: "2026-05-17",
+    generatedAt: "2026-05-18",
     org,
     partners,
     documents,
